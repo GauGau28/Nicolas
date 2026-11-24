@@ -214,6 +214,7 @@
   .authForm{display:flex;flex-direction:column;gap:10px;max-width:380px;margin:0 auto}
   .authForm input{border:2px solid var(--line);border-radius:14px;padding:13px 14px;font-size:16px;background:#fffdf8}
   .authForm input:focus{outline:none;border-color:var(--gold)}
+  .person.logoutChip{background:#fff0f1;color:var(--red);border:1.5px solid #f5c2c7}
   footer{text-align:center;color:var(--muted);font-size:12.5px;padding:10px 14px 30px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -306,6 +307,7 @@
       </div>
       <p class="status" id="setMsg"></p>
     </div>
+    <button class="btn ghost hidden" id="setLogout" style="width:100%;margin:8px 0 4px">🚪 Se déconnecter / changer de compte</button>
     <div class="sheetBtns"><button class="btn ghost" id="setClose">Fermer</button></div>
   </div>
 </div>
@@ -724,7 +726,7 @@ Réponds uniquement avec un objet JSON, par exemple :
       ...others.map(p => `<button class="person ${viewPerson === p.id ? "active" : ""}" data-person="${esc(p.id)}">👤 ${esc(p.pseudo)}</button>`),
       legacy && !isOwnerViewer ? `<button class="person ${viewPerson === "__legacy" ? "active" : ""}" data-person="__legacy">🎁 Famille</button>` : ""
     ].join("");
-    $("people").innerHTML = mode === "db" || mode === "sb" ? peopleHTML : "";
+    $("people").innerHTML = mode === "db" || mode === "sb" ? peopleHTML + (mode === "sb" && sbSession ? `<button class="person logoutChip" id="logoutChip">🚪 Déconnexion</button>` : "") : "";
     renderFooter();
     if (viewPerson === null && legacy) viewPerson = "__legacy";
 
@@ -1346,6 +1348,15 @@ Lis ce qui est visible et réponds uniquement avec un objet JSON, par exemple :
   });
   $("panel").addEventListener("input", e => { if (e.target.id === "auPseudo") updateAuthMsg(); });
   $("panel").addEventListener("keydown", e => { if (["auPass","auEmail","auPseudo"].includes(e.target.id) && e.key === "Enter") sbAuth(); });
+
+  /* bouton de déconnexion visible + dans les paramètres */
+  $("people").addEventListener("click", e => { if (e.target.closest("#logoutChip")) sbLogout(); });
+  $("setBtn").addEventListener("click", () => {
+    const b = $("setLogout"); if (!b) return;
+    b.classList.toggle("hidden", !(mode === "sb" && sbSession));
+    b.textContent = `🚪 Se déconnecter (${pseudoOf(me)}) / changer de compte`;
+  });
+  $("setLogout").onclick = () => { closeVeil("setVeil"); sbLogout(); };
 
   /* ---------------- paramètres : prix total + sauvegarde ---------------- */
   let showTotal = LS.get("sn-show-total", false);
