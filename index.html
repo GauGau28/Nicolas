@@ -206,6 +206,7 @@
   .tgl:checked{background:#2a9d55}.tgl:checked::after{left:25px}
   .setBlock{display:flex;flex-direction:column;gap:8px;background:var(--cream);border-radius:14px;padding:12px 14px;margin-bottom:6px}
   .setRestoreBox{display:flex;flex-direction:column;gap:8px}
+  .codeBox{border:2px solid var(--line);border-radius:12px;padding:10px;font-size:12px;font-family:monospace;resize:vertical;background:#fff}
   .setRestoreBox textarea{border:2px solid var(--line);border-radius:12px;padding:10px;font-size:14px;font:inherit;resize:vertical}
   footer{text-align:center;color:var(--muted);font-size:12.5px;padding:10px 14px 30px}
 </style>
@@ -289,6 +290,7 @@
       <small id="setCount"></small>
       <button class="btn gold" id="setDownload">📥 Télécharger ma sauvegarde</button>
       <button class="btn ghost" id="setCopy">📋 Copier le code de sauvegarde</button>
+      <textarea id="setCodeBox" class="hidden codeBox" rows="3" readonly></textarea>
       <button class="btn ghost" id="setRestore">♻️ Restaurer une sauvegarde</button>
       <div id="setRestoreBox" class="hidden setRestoreBox">
         <button class="btn ghost" id="setRestoreFile">📂 Choisir le fichier de sauvegarde</button>
@@ -1231,8 +1233,15 @@ Lis ce qui est visible et réponds uniquement avec un objet JSON, par exemple :
     $("setMsg").textContent = "📥 Fichier téléchargé : garde-le précieusement.";
   };
   $("setCopy").onclick = async () => {
-    try{ await navigator.clipboard.writeText(JSON.stringify(backupData())); $("setMsg").textContent = "📋 Code copié ! Colle-le dans tes notes pour le garder."; }
-    catch{ $("setMsg").textContent = "Impossible de copier ici. Utilise le téléchargement."; }
+    const code = JSON.stringify(backupData());
+    const box = $("setCodeBox");
+    box.value = code; box.classList.remove("hidden");
+    let ok = false;
+    try{ await navigator.clipboard.writeText(code); ok = true; }catch{}
+    if (!ok){ try{ box.focus(); box.select(); box.setSelectionRange(0, code.length); ok = document.execCommand("copy"); }catch{} }
+    $("setMsg").textContent = ok
+      ? "📋 Code copié. Rien n'est enregistré tout seul : ouvre l'app Notes, crée une note et appuie sur « Coller »."
+      : "Le code est dans le cadre ci-dessous : appuie longtemps dedans, « Tout sélectionner », puis « Copier », et colle-le dans l'app Notes.";
   };
   $("setRestore").onclick = () => $("setRestoreBox").classList.toggle("hidden");
   $("setRestoreFile").onclick = () => $("restoreFile").click();
