@@ -214,6 +214,8 @@
   .authForm{display:flex;flex-direction:column;gap:10px;max-width:380px;margin:0 auto}
   .authForm input{border:2px solid var(--line);border-radius:14px;padding:13px 14px;font-size:16px;background:#fffdf8}
   .authForm input:focus{outline:none;border-color:var(--gold)}
+  #kidsBlock input{border:2px solid var(--line);border-radius:12px;padding:11px 12px;font-size:16px;background:#fff}
+  .kidRow{display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:8px 10px;font-weight:800}
   .person.logoutChip{background:#fff0f1;color:var(--red);border:1.5px solid #f5c2c7}
   footer{text-align:center;color:var(--muted);font-size:12.5px;padding:10px 14px 30px}
 </style>
@@ -306,6 +308,15 @@
         <button class="btn" id="setRestoreGo">Restaurer ce code</button>
       </div>
       <p class="status" id="setMsg"></p>
+    </div>
+    <div class="setBlock hidden" id="kidsBlock">
+      <b>👨‍👧 Ajouter un enfant</b>
+      <small>Tu verras sa liste et tu pourras cocher « Acheté ». Lui ne voit pas ta liste et ne sait pas que tu l'as ajouté.</small>
+      <div id="kidsList"></div>
+      <input id="kidEmail" type="email" inputmode="email" autocomplete="off" placeholder="E-mail de son compte">
+      <input id="kidPass" type="password" autocomplete="off" placeholder="Mot de passe de son compte">
+      <button class="btn" id="kidAdd">Ajouter</button>
+      <p class="status" id="kidMsg"></p>
     </div>
     <button class="btn ghost hidden" id="setLogout" style="width:100%;margin:8px 0 4px">🚪 Se déconnecter / changer de compte</button>
     <div class="sheetBtns"><button class="btn ghost" id="setClose">Fermer</button></div>
@@ -720,7 +731,8 @@ Réponds uniquement avec un objet JSON, par exemple :
     // Personnes
     if (!people.find(p => p.id === viewPerson)) viewPerson = mine ? me : (people[0] ? people[0].id : null);
     const legacy = lists.some(l => !l.ownerId);
-    const others = people.filter(p => p.id !== me);
+    const others = people.filter(p => p.id !== me && (mode !== "sb" || sbAccess.has(p.id)));
+    if (mode === "sb") $("parentBtn").classList.toggle("hidden", viewPerson !== me);
     const peopleHTML = [
       mine ? `<button class="person ${viewPerson === me ? "active" : ""}" data-person="${esc(me)}">⭐ Moi · ${esc(mine.pseudo)}</button>` : "",
       ...others.map(p => `<button class="person ${viewPerson === p.id ? "active" : ""}" data-person="${esc(p.id)}">👤 ${esc(p.pseudo)}</button>`),
@@ -1187,6 +1199,7 @@ Lis ce qui est visible et réponds uniquement avec un objet JSON, par exemple :
   const SB_KEY = "sb_publishable_J77v7LwppIYetrJM6DHpnA_GYF_utEh";
   const sbConfigured = () => /^https:\/\//.test(SB_URL) && SB_KEY.length > 20 && window.supabase && window.supabase.createClient;
   let sbc = null, sbSession = null, authKind = "signup";
+  let sbAccess = new Set();
   function sbErrText(e){
     const m = String((e && (e.message || e.code)) || "").toLowerCase();
     if (m.includes("invalid login")) return "E-mail ou mot de passe incorrect";
@@ -1217,7 +1230,10 @@ Lis ce qui est visible et réponds uniquement avec un objet JSON, par exemple :
       people = (pr.data || []).map(p => ({id: p.id, pseudo: p.pseudo, key: p.pseudo_key}));
       if (sbSession){
         if (!people.some(p => p.id === sbSession.user.id)){ await ensureProfile(); const again = await sbc.from("snl_profiles").select("id,pseudo,pseudo_key"); people = (again.data || []).map(p => ({id: p.id, pseudo: p.pseudo, key: p.pseudo_key})); }
-        const [ll, ii] = await Promise.all([sbc.from("snl_lists").select("*").order("created_at"), sbc.from("snl_items").select("*").order("created_at")]);
+        const [ll, ii, aa] = await Promise.all([sbc.from("snl_lists").select("*").order("created_at"), sbc.from("snl_items").select("*").order("created_at"),
+          sbc.from("snl_access").select("target").eq("viewer", sbSession.user.id)]);
+        sbAccess = new Set(((aa && aa.data) || []).map(a => a.target));
+        if (viewPerson !== sbSession.user.id && !sbAccess.has(viewPerson)) viewPerson = sbSession.user.id;
         if (ll.error) throw ll.error; if (ii.error) throw ii.error;
         lists = (ll.data || []).map(l => ({id: l.id, ownerId: l.owner, name: l.name, emoji: l.emoji, createdAt: Date.parse(l.created_at)}));
         items = (ii.data || []).map(mapItem);
@@ -1357,6 +1373,48 @@ Lis ce qui est visible et réponds uniquement avec un objet JSON, par exemple :
     b.textContent = `🚪 Se déconnecter (${pseudoOf(me)}) / changer de compte`;
   });
   $("setLogout").onclick = () => { closeVeil("setVeil"); sbLogout(); };
+
+  /* ---------- enfants ajoutés (accès privé) ---------- */
+  function renderKids(){
+    const box = $("kidsList"); if (!box) return;
+    const kids = people.filter(p => sbAccess.has(p.id));
+    box.innerHTML = kids.length ? kids.map(k => `<div class="kidRow"><span>👤 ${esc(k.pseudo)}</span><button class="noLink" data-unkid="${esc(k.id)}">Retirer</button></div>`).join("")
+      : `<small>Personne pour l'instant.</small>`;
+  }
+  $("setBtn").addEventListener("click", () => {
+    $("kidsBlock").classList.toggle("hidden", !(mode === "sb" && sbSession));
+    $("kidMsg").textContent = ""; $("kidEmail").value = ""; $("kidPass").value = "";
+    renderKids();
+  });
+  $("kidsList").addEventListener("click", async e => {
+    const b = e.target.closest("[data-unkid]"); if (!b) return;
+    const r = await sbc.from("snl_access").delete().eq("viewer", me).eq("target", b.dataset.unkid);
+    if (r.error){ $("kidMsg").textContent = sbErrText(r.error); return; }
+    await sbLoad(); renderKids(); $("kidMsg").textContent = "Retiré.";
+  });
+  $("kidAdd").onclick = async () => {
+    const msg = $("kidMsg"), btn = $("kidAdd");
+    const email = ($("kidEmail").value || "").trim(), pass = $("kidPass").value || "";
+    if (!/^\S+@\S+\.\S+$/.test(email) || pass.length < 6){ msg.textContent = "Écris l'e-mail et le mot de passe de son compte."; return; }
+    btn.disabled = true; msg.textContent = "Ajout en cours…";
+    let tmp = null;
+    try{
+      tmp = window.supabase.createClient(SB_URL, SB_KEY, {auth: {persistSession: false, autoRefreshToken: false, storageKey: "snl-ajout-enfant"}});
+      const {data, error} = await tmp.auth.signInWithPassword({email, password: pass});
+      if (error) throw error;
+      const kidId = data.user.id;
+      if (kidId === me){ msg.textContent = "C'est ton propre compte 🙂"; return; }
+      const ins = await tmp.from("snl_access").insert({viewer: me, target: kidId});
+      if (ins.error && !String(ins.error.message || "").toLowerCase().includes("duplicate")) throw ins.error;
+      await sbLoad(); renderKids();
+      msg.textContent = `✅ ${pseudoOf(kidId)} est ajouté : tu vois maintenant sa liste.`;
+      $("kidEmail").value = ""; $("kidPass").value = "";
+    }catch(e){ msg.textContent = sbErrText(e); }
+    finally{
+      if (tmp){ try{ await tmp.auth.signOut({scope: "local"}); }catch{} }
+      btn.disabled = false;
+    }
+  };
 
   /* ---------------- paramètres : prix total + sauvegarde ---------------- */
   let showTotal = LS.get("sn-show-total", false);
